@@ -142,6 +142,17 @@ with open(voc_dir, 'wb') as output:
 
 # Starting the training
 embedding = nn.Embedding(voc.num_words, hidden_size)
+encoder = models.Encoder(hidden_size, embedding, dropout, encoder_n_layers)
+decoder = models.Decoder(attn_model, embedding, hidden_size, voc.num_words, decoder_n_layers, dropout)
+
+# Training on the movies script
+clip = 50.0
+teacher_forcing_ratio = 1.0
+learning_rate = 0.0001
+decoder_learning_ratio = 5.0
+n_iteration = 10000
+print_every = 20
+save_every = 1000
 
 
 
