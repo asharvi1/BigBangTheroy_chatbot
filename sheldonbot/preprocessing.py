@@ -28,10 +28,10 @@ def readVocs(datafile):
 def filterPair(p, max_length):
     return len(p[0].split(' ')) < max_length and len(p[1].split(' ')) < max_length
 
-def filterPairs(pairs):
-    return [pair for pair in pairs if filterPair(pair)]
+def filterPairs(pairs, max_length):
+    return [pair for pair in pairs if filterPair(pair, max_length)]
 
-def loadPrepareData(corpus_name, movies_datafile, bigbang_datafile):
+def loadPrepareData(corpus_name, movies_datafile, bigbang_datafile, max_length):
     print('Start preparing training data ...')
     movies_pairs = readVocs(movies_datafile)
     bigbang_pairs = readVocs(bigbang_datafile)
@@ -39,7 +39,7 @@ def loadPrepareData(corpus_name, movies_datafile, bigbang_datafile):
 
     print('Filtering Movies Pairs ...')
     print('Read {!s} sentence pairs'.format(len(movies_pairs)))
-    movies_pairs = filterPairs(movies_pairs)
+    movies_pairs = filterPairs(movies_pairs, max_length)
     print('Trimmed to {!s} sentence pairs'.format(len(movies_pairs)))
     print('counting words ...')
     for pair in movies_pairs:
@@ -48,7 +48,7 @@ def loadPrepareData(corpus_name, movies_datafile, bigbang_datafile):
 
     print('Filtering Big Bang Pairs ...')
     print('Read {!s} sentence pairs'.format(len(bigbang_pairs)))
-    bigbang_pairs = filterPairs(bigbang_pairs)
+    bigbang_pairs = filterPairs(bigbang_pairs, max_length)
     print('Trimmed to {!s} sentence pairs'.format(len(bigbang_pairs)))
     print('counting words ...')
     for pair in bigbang_pairs:

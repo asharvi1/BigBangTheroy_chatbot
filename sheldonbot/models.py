@@ -6,7 +6,7 @@ import torch.nn.functional as F
 
 # Neural Net
 
-class Encoder(nn.Module):
+class Encoder_GRU(nn.Module):
 
 	def __init__(self, hidden_size, embedding, dropout, n_layers = 2):
 
@@ -28,6 +28,27 @@ class Encoder(nn.Module):
 
 		return outputs, hidden
 
+class Encoder_LSTM(nn.Module):
+
+	def __init__(self, hidden_size, embedding, dropout, n_layers = 2):
+
+		super(Encoder, self).__init__()
+
+		self.n_layers = n_layers
+		self.hidden_size = hidden_size
+		self.embedding = embedding
+		self.lstm = nn.LSTM(hidden_size, hidden_size, n_layers,
+							dropout = dropout, bidirectional = True)
+
+	def forward(self, input_seq, input_lengths, hidden = None):
+
+		embedded = self.embedding(input_seq)
+		packed = nn.utils.rnn.pack_padded_sequence(embedded, input_lengths)
+		outputs, hidden = self.gru(packed, hidden)
+		outputs, _ = nn.utils.rnn.pad_packed_sequence(outputs)
+		outputs = outputs[:, :, :self.hidden_size] + outputs[:, :, self.hidden_size:]
+
+		return outputs, hidden
 
 # Luong Attention
 
@@ -74,7 +95,7 @@ class LuongAttn(nn.Module):
 
 		return F.softmax(attn_energies, dim = 1).unsqueeze(1)
 
-class Decoder(nn.Module):
+class Decoder_GRU(nn.Module):
 
 	def __init__(self, attn_model, embedding, hidden_size, output_size, n_layers = 2, dropout = 0):
 
@@ -103,6 +124,41 @@ class Decoder(nn.Module):
 		gru_output = gru_output.squeeze(0)
 		context = context.squeeze(1)
 		concat_input = torch.cat((gru_output, context), 1)
+		concat_output = torch.tanh(self.concat(concat_input))
+		output = self.out(concat_output)
+		output = F.softmax(output, dim = 1)
+
+		return output, hidden
+
+class Decoder_LSTM(nn.Module):
+
+	def __init__(self, attn_model, embedding, hidden_size, output_size, n_layers = 2, dropout = 0):
+
+		super(Decoder, self).__init__()
+
+		self.attn_model = attn_model
+		self.hidden_size = hidden_size
+		self.output_size = output_size
+		self.n_layers = n_layers
+		self.dropout = dropout
+
+		self.embedding = embedding
+		self.embedding_dropout = nn.Dropout(dropout)
+		self.lstm = nn.LSTM(hidden_size, hidden_size, n_layers, dropout = dropout)
+		self.concat = nn.Linear(hidden_size * 2, hidden_size)
+		self.out = nn.Linear(hidden_size, output_size)
+		self.attn = LuongAttn(attn_model, hidden_size)
+
+	def forward(self, input_seq, last_hidden, encoder_outputs):
+
+		embedded = self.embedding(input_seq)
+		embedded = self.embedding_dropout(embedded)
+		lstm_output, hidden = self.lstm(embedded, last_hidden)
+		attn_weights = self.attn(lstm_output, encoder_outputs)
+		context = attn_weights.bmm(encoder_outputs.transpose(0, 1))
+		lstm_output = lstm_output.squeeze(0)
+		context = context.squeeze(1)
+		concat_input = torch.cat((lstm_output, context), 1)
 		concat_output = torch.tanh(self.concat(concat_input))
 		output = self.out(concat_output)
 		output = F.softmax(output, dim = 1)

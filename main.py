@@ -4,20 +4,24 @@ from __future__ import print_function
 from __future__ import unicode_literals
 
 from sheldonbot import models
-from sheldonbot import loss
+from sheldonbot import loss_mask
 from sheldonbot import batch_gen
 from sheldonbot import preprocessing
-from sheldonbot import vocabulary
 
 import torch.nn as nn
 import torch
+from torch import optim
 import os
+import pickle
+import random
 
 
 
+MAX_LENGTH = 10
+SOS_TOKEN = 1
 def train(input_variable, lengths, target_variable, mask, max_target_len,
           encoder, decoder, embedding, encoder_optimizer, decoder_optimizer,
-          batch_size, clip, max_length = MAX_LENGTH, sos_token, mask_loss):
+          batch_size, clip, sos_token, mask_loss, max_length):
     
     encoder_optimizer.zero_grad()
     decoder_optimizer.zero_grad()
@@ -40,10 +44,10 @@ def train(input_variable, lengths, target_variable, mask, max_target_len,
                                                      decoder_hidden, 
                                                      encoder_outputs)
             decoder_input = target_variable[t].view(1, -1)
-            mask_loss, nTotal = mask_loss(decoder_output, target_variable[t],
+            m_loss, nTotal = mask_loss(decoder_output, target_variable[t],
                                             mask[t])
-            loss += mask_loss
-            print_losses.append(mask_loss.item()*nTotal)
+            loss += m_loss
+            print_losses.append(m_loss.item()*nTotal)
             n_totals += nTotal
     else:
         for t in range(max_target_len):
@@ -52,9 +56,9 @@ def train(input_variable, lengths, target_variable, mask, max_target_len,
                                                      encoder_outputs)
             _, topi = decoder_output.topk(1)
             decoder_input = torch.LongTensor([[topi[i][0] for i in range(batch_size)]])
-            mask_loss, nTotal = maskNLLLoss(decoder_output, target_variable[t], mask[t])
-            loss += mask_loss
-            print_losses.append(mask_loss.item()*nTotal)
+            m_loss, nTotal = mask_loss(decoder_output, target_variable[t], mask[t])
+            loss += m_loss
+            print_losses.append(m_loss.item()*nTotal)
             n_totals += nTotal
             
     loss.backward()
@@ -70,9 +74,9 @@ def train(input_variable, lengths, target_variable, mask, max_target_len,
 def trainIters(model_name, voc, pairs, encoder, decoder, encoder_optimizer,
                decoder_optimizer, embedding, encoder_n_layers, decoder_n_layers, 
                save_dir, n_iteration, batch_size, print_every, save_every, clip,
-               corpus_name):
+               corpus_name, sos_token, mask_loss, max_length):
     
-    training_batches = [batch2TrainData(voc, [random.choice(pairs) for _ in range(batch_size)]) 
+    training_batches = [batch_gen.batch2train(voc, [random.choice(pairs) for _ in range(batch_size)]) 
                         for _ in range(n_iteration)]
     
     
@@ -88,7 +92,8 @@ def trainIters(model_name, voc, pairs, encoder, decoder, encoder_optimizer,
         input_variable, lengths, target_variable, mask, max_target_len = training_batch
         loss = train(input_variable, lengths, target_variable, mask, 
                      max_target_len, encoder, decoder, embedding, 
-                     encoder_optimizer, decoder_optimizer, batch_size, clip)
+                     encoder_optimizer, decoder_optimizer, batch_size, clip, 
+                     sos_token, mask_loss, max_length)
         
         print_loss += loss
         
@@ -121,7 +126,7 @@ def trainIters(model_name, voc, pairs, encoder, decoder, encoder_optimizer,
 corpus_name = 'movies_bigbang'
 movies_datafile = os.path.join('data', 'movie_lines.txt')
 big_bang_datafile =  os.path.join('data', 'BigBangTheory_pairs.txt')
-voc, movie_pairs, bigbang_pairs = preprocessing.loadPrepareData(corpus_name, movies_datafile, big_bang_datafile) 
+voc, movie_pairs, bigbang_pairs = preprocessing.loadPrepareData(corpus_name, movies_datafile, big_bang_datafile, MAX_LENGTH) 
 
 model_name = 'movies_bigbang_model'
 attn_model = 'dot'
@@ -153,6 +158,20 @@ decoder_learning_ratio = 5.0
 n_iteration = 10000
 print_every = 20
 save_every = 1000
+
+encoder.train()
+decoder.train()
+
+print('Building Optimizers ...')
+encoder_optimizer = optim.Adam(encoder.parameters(), lr = learning_rate)
+decoder_optimizer = optim.Adam(decoder.parameters(), lr = learning_rate * decoder_learning_ratio)
+
+print('Starting movies subitles training')
+trainIters(model_name, voc, movie_pairs, encoder, decoder, encoder_optimizer, 
+           decoder_optimizer, embedding, encoder_n_layers, decoder_n_layers, movies_train_savdir,
+           n_iteration, batch_size, print_every, save_every, clip, corpus_name, 
+           SOS_TOKEN, loss_mask.maskNLLLoss, MAX_LENGTH)
+
 
 
 
